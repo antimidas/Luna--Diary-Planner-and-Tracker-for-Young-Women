@@ -22,7 +22,7 @@ const pool = mysql.createPool({
   port: process.env.DB_PORT || 3306,
   database: process.env.DB_NAME || "period_tracker",
   user: process.env.DB_USER || "tracker",
-  password: process.env.DB_PASSWORD || "",
+  password: process.env.DB_PASSWORD || "Edifice692vacuum1956$",
   waitForConnections: true,
   connectionLimit: 10,
 });
@@ -631,7 +631,7 @@ async function createMySqlDump() {
   const port = String(process.env.DB_PORT || 3306);
   const db = process.env.DB_NAME || "period_tracker";
   const user = process.env.DB_USER || "tracker";
-  const password = process.env.DB_PASSWORD || "";
+  const password = process.env.DB_PASSWORD || "Edifice692vacuum1956$";
   const args = ["-h", host, "-P", port, "-u", user, `--password=${password}`, "--single-transaction", db];
   const { stdout } = await execFileAsync("mysqldump", args, { maxBuffer: 1024 * 1024 * 32 });
   return stdout;

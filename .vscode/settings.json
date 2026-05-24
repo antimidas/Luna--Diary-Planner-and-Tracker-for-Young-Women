@@ -1,0 +1,6 @@
+{
+    "chatgpt.gpt3.provider": "Ollama",
+    "chatgpt.gpt3.apiBaseUrl": "http://10.0.0.3/v1",
+    "chatgpt.gpt3.model": "custom",
+    "chatgpt.gpt3.customModel": "gemma4:e4b"
+}

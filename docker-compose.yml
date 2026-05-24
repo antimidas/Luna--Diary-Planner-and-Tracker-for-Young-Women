@@ -6,7 +6,7 @@ services:
     container_name: luna-all-in-one
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "7780:80"
       - "2222:22"
       - "3306:3306"
     environment:
@@ -14,14 +14,14 @@ services:
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       DB_NAME: period_tracker
-      DB_USER: tracker
-      DB_PASSWORD: changeme_tracker
-      MYSQL_ROOT_PASSWORD: rootpass
-      API_KEY: mysecretapikey
-      JWT_SECRET: change-me-in-env
-      HA_BASE_URL: ""
-      HA_WEBHOOK_URL: ""
-      HA_TOKEN: ""
+      DB_USER: ${DB_USER:-tracker}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your environment or .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in your environment or .env}
+      API_KEY: ${API_KEY:?Set API_KEY in your environment or .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your environment or .env}
+      HA_BASE_URL: ${HA_BASE_URL:-}
+      HA_WEBHOOK_URL: ${HA_WEBHOOK_URL:-}
+      HA_TOKEN: ${HA_TOKEN:-}
       SSH_USER: luna
       SSH_PASSWORD: luna
     volumes:
