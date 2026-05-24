@@ -369,7 +369,7 @@ update_ha_configs() {
 
   sed -i \
     -e "s|http://127.0.0.1|${LUNA_URL}|g" \
-    -e "s|https://pt.3evils.com|${LUNA_URL}|g" \
+    -e "s|https://luna.3evils.com|${LUNA_URL}|g" \
     "${INSTALL_DIR}/ha-config/lovelace-card.yaml"
 
   success "Home Assistant config files updated."

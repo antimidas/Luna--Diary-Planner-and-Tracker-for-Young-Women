@@ -7,7 +7,7 @@
 # Configured for Mila on the public Luna host.
 
 rest:
-  - resource: "https://pt.3evils.com/api/summary?username=mila"
+  - resource: "https://luna.3evils.com/api/summary?username=mila"
     headers:
       X-Api-Key: "mysecretapikey"
     scan_interval: 3600   # refresh every hour
@@ -44,7 +44,7 @@ rest:
         unit_of_measurement: "days"
         icon: "mdi:chart-timeline-variant"
 
-  - resource: "https://pt.3evils.com/api/ha-calendar?username=mila"
+  - resource: "https:/luna.3evils.com/api/ha-calendar?username=mila"
     headers:
       X-Api-Key: "mysecretapikey"
     scan_interval: 1800

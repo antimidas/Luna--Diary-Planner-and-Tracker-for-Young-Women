@@ -80,5 +80,5 @@ cards:
     icon: mdi:open-in-new
     tap_action:
       action: url
-      url_path: https://pt.3evils.com
+      url_path: https://luna.3evils.com
     show_state: false
