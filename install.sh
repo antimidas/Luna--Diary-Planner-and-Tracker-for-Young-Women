@@ -220,6 +220,8 @@ install_npm() {
   info "Installing Node.js dependencies…"
   cd "${INSTALL_DIR}/backend"
   npm install --omit=dev --silent
+  npm install bcryptjs
+  npm install bcrypt
   cd "${INSTALL_DIR}"
   success "npm install complete."
 }
