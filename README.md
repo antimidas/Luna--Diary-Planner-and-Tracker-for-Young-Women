@@ -673,3 +673,131 @@ The **Wallpapers Used In Themes** section shows all images currently assigned to
 - Theme-to-wallpaper associations are stored under `luna_theme_wallpapers`.
 - When a theme is applied, its wallpaper (if any) is set as the `--bg-art` CSS variable, replacing the gradient background.
 
+---
+
+## Full install instructions (Ubuntu / Debian)
+
+Use the steps below for a complete fresh install on a Linux host.
+
+### 1. Install system packages
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y nginx mariadb-server mariadb-client nodejs npm curl git openssl
+```
+
+### 2. Clone the project
+
+```bash
+cd /opt
+sudo git clone https://github.com/your-user/Luna--Diary-Planner-and-Tracker-for-Young-Women.git period-tracker
+cd /opt/period-tracker
+```
+
+### 3. Configure environment variables
+
+```bash
+cp .env.example .env
+sudo nano .env
+```
+
+Set at least these values in `.env`:
+
+```env
+DB_HOST=127.0.0.1
+DB_NAME=period_tracker
+DB_USER=tracker
+DB_PASSWORD=your_secure_password
+MYSQL_ROOT_PASSWORD=your_root_password
+MYSQL_PASSWORD=your_secure_password
+API_KEY=your_api_key
+JWT_SECRET=your_jwt_secret
+LUNA_URL=http://YOUR_SERVER_IP
+```
+
+Optional Home Assistant values:
+
+```env
+HA_BASE_URL=http://homeassistant.local
+HA_WEBHOOK_URL=http://homeassistant.local/api/webhook/period_tracker
+HA_TOKEN=your_long_lived_token
+```
+
+### 4. Create the database
+
+```bash
+sudo systemctl enable --now mariadb
+sudo mysql -uroot <<'SQL'
+CREATE DATABASE IF NOT EXISTS period_tracker;
+CREATE USER IF NOT EXISTS 'tracker'@'localhost' IDENTIFIED BY 'your_secure_password';
+CREATE USER IF NOT EXISTS 'tracker'@'%' IDENTIFIED BY 'your_secure_password';
+GRANT ALL PRIVILEGES ON period_tracker.* TO 'tracker'@'localhost';
+GRANT ALL PRIVILEGES ON period_tracker.* TO 'tracker'@'%';
+FLUSH PRIVILEGES;
+SQL
+
+sudo mysql -uroot period_tracker < db/init.sql
+```
+
+### 5. Install backend dependencies
+
+```bash
+cd /opt/period-tracker/backend
+npm install
+```
+
+### 6. Configure Nginx
+
+```bash
+sudo cp /opt/period-tracker/nginx.conf /etc/nginx/sites-available/period-tracker
+sudo ln -s /etc/nginx/sites-available/period-tracker /etc/nginx/sites-enabled/period-tracker
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 7. Install and start the service
+
+```bash
+sudo cp /opt/period-tracker/backend/luna.service.example /etc/systemd/system/luna.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now luna
+sudo systemctl status luna
+```
+
+### 8. Verify the install
+
+Open the site in your browser:
+
+```text
+http://YOUR_SERVER_IP/
+```
+
+Check the API health endpoint:
+
+```bash
+curl http://YOUR_SERVER_IP/api/health
+```
+
+### 9. Retrieve a Home Assistant embed token
+
+Use the following command to request a token for a Luna username:
+
+```bash
+curl -H "X-Api-Key: YOUR_API_KEY" \
+  "http://YOUR_SERVER_IP/api/auth/embed-token?username=YOUR_LUNA_USERNAME"
+```
+
+Example:
+
+```bash
+curl -H "X-Api-Key: YOUR_API_KEY" \
+  "http://YOUR_SERVER_IP/api/auth/embed-token?username=mila"
+```
+
+The response includes a token you can append to iframe URLs such as:
+
+```text
+http://YOUR_SERVER_IP/diary?token=YOUR_EMBED_TOKEN
+```
+
