@@ -775,28 +775,46 @@ app.post("/api/auth/register", async (req, res) => {
 
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: "username and password required" });
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required." });
+  }
 
-  const [rows] = await pool.query(
-    `SELECT u.id, u.username, u.display_name, u.password_hash,
-            CASE WHEN ua.user_id IS NULL THEN 0 ELSE 1 END AS is_admin
-     FROM users u
-     LEFT JOIN user_admins ua ON ua.user_id=u.id
-     WHERE u.username=?
-     LIMIT 1`,
-    [String(username).trim().toLowerCase()]
-  );
+  try {
+    // 1. Find user by username
+    const [users] = await pool.query(
+      `SELECT id, username, password_hash, display_name FROM users WHERE username=? LIMIT 1`,
+      [username]
+    );
 
-  const user = rows[0];
-  if (!user) return res.status(401).json({ error: "invalid credentials" });
+    if (users.length === 0) {
+      return res.status(401).json({ error: "Invalid credentials." });
+    }
 
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).json({ error: "invalid credentials" });
+    const user = users[0];
 
-  res.json({
-    token: signToken(user),
-    user: { id: user.id, username: user.username, display_name: user.display_name, is_admin: !!user.is_admin },
-  });
+    // 2. Compare password hash
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid credentials." });
+    }
+
+    // 3. Success: Generate token and send response
+    const token = signToken(user);
+    res.status(200).json({
+      token: token,
+      user: {
+        id: user.id,
+        username: user.username,
+        display_name: user.display_name,
+        is_admin: (await pool.query("SELECT 1 FROM user_admins WHERE user_id = ?", [user.id]))[0] ? true : false,
+      },
+    });
+
+  } catch (err) {
+    console.error("Login API Error:", err);
+    res.status(500).json({ error: "Server error during login." });
+  }
 });
 
 // Generate a long-lived embed token using the API key (no password needed)

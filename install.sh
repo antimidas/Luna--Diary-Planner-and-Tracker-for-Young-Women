@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# ══════════════════════════════════════════════════════════
-#  Luna Period Tracker — Bare-Metal Installer
-#  Supports: Debian / Ubuntu (apt-based distros)
-# ══════════════════════════════════════════════════════════
 set -euo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,13 +13,23 @@ require_root() {
   [[ $EUID -eq 0 ]] || die "This installer must be run as root (sudo ./install.sh)"
 }
 
-# ── Helper: generate a random secret ─────────────────────
 rand_secret() { openssl rand -hex 32; }
 
-# ── Prompt helpers ────────────────────────────────────────
 prompt() {
   local var="$1" msg="$2" default="${3:-}"
   local val
+  local env_val="${!var:-}"
+
+  if [[ -n "$env_val" ]]; then
+    printf -v "$var" '%s' "$env_val"
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    printf -v "$var" '%s' "$default"
+    return
+  fi
+
   if [[ -n "$default" ]]; then
     read -rp "$(echo -e "${YELLOW}?${NC} $msg [$default]: ")" val
     val="${val:-$default}"
@@ -40,6 +46,20 @@ prompt() {
 prompt_password() {
   local var="$1" msg="$2" default="${3:-}"
   local val confirm
+  local env_val="${!var:-}"
+
+  if [[ -n "$env_val" ]]; then
+    printf -v "$var" '%s' "$env_val"
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    local generated
+    generated="$(openssl rand -hex 12)"
+    printf -v "$var" '%s' "$generated"
+    return
+  fi
+
   while true; do
     read -srp "$(echo -e "${YELLOW}?${NC} $msg (input hidden): ")" val; echo
     if [[ -z "$val" && -n "$default" ]]; then val="$default"; fi
@@ -60,62 +80,66 @@ validate_admin_username() {
 prompt_yn() {
   local var="$1" msg="$2" default="${3:-y}"
   local val
+  local env_val="${!var:-}"
+
+  if [[ -n "$env_val" ]]; then
+    printf -v "$var" '%s' "$env_val"
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    printf -v "$var" '%s' "$default"
+    return
+  fi
+
   read -rp "$(echo -e "${YELLOW}?${NC} $msg [${default}]: ")" val
   val="${val:-$default}"
   [[ "$val" =~ ^[Yy] ]] && printf -v "$var" 'y' || printf -v "$var" 'n'
 }
 
-# ══════════════════════════════════════════════════════════
-#  GATHER CONFIGURATION
-# ══════════════════════════════════════════════════════════
-gather_config() {
-  echo ""
-  echo -e "${CYAN}════════════════════════════════════════════${NC}"
-  echo -e "${CYAN}  Luna Period Tracker — Installation Setup  ${NC}"
-  echo -e "${CYAN}════════════════════════════════════════════${NC}"
-  echo ""
+install_dependencies() {
+  info "Detecting operating system and installing required packages..."
 
-  # Luna URL
-  prompt LUNA_URL \
-    "Public URL for Luna (e.g. https://pt.example.com)" \
-    "http://$(hostname -I | awk '{print $1}')"
-
-  # Strip trailing slash
-  LUNA_URL="${LUNA_URL%/}"
-
-  # Home Assistant
-  prompt_yn SETUP_HA "Do you want to configure Home Assistant integration?" "y"
-  if [[ "$SETUP_HA" == "y" ]]; then
-    prompt HA_URL \
-      "Home Assistant URL (e.g. https://homeassistant.example.com)" \
-      ""
-    HA_URL="${HA_URL%/}"
-    prompt HA_WEBHOOK_ID \
-      "HA webhook ID (must match automation in HA)" \
-      "period_tracker_12345"
-    prompt HA_TOKEN \
-      "HA Long-Lived Access Token (leave blank to skip)" \
-      ""
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      apt-get install -y --no-install-recommends nginx mariadb-server mariadb-client nodejs npm curl openssh-server git openssl
+    else
+      apt-get install -y --no-install-recommends nginx mariadb-server mariadb-client curl openssh-server git openssl
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y nginx mariadb nodejs npm curl openssh-clients git openssl
+  elif command -v pacman >/dev/null 2>&1; then
+    pacman -Sy --noconfirm nginx mariadb nodejs npm curl openssh git openssl
   else
-    HA_URL=""; HA_WEBHOOK_ID=""; HA_TOKEN=""
+    die "Unsupported operating system."
   fi
 
+  success "Dependencies installed successfully."
+}
+
+gather_config() {
   echo ""
   echo -e "${CYAN}── Database ──────────────────────────────────${NC}"
-  prompt DB_NAME   "MariaDB database name"  "period_tracker"
-  prompt DB_USER   "MariaDB app username"   "tracker"
-  prompt_password DB_PASS  "MariaDB app user password"
+  prompt DB_NAME "MariaDB database name" "period_tracker"
+  prompt DB_USER "MariaDB app username" "tracker"
+  prompt_password DB_PASS "MariaDB app user password"
 
   echo ""
   echo -e "${CYAN}── Security ──────────────────────────────────${NC}"
   local default_api_key; default_api_key=$(rand_secret)
-  local default_jwt;     default_jwt=$(rand_secret)
-  prompt API_KEY    "API key for Home Assistant REST sensor" "$default_api_key"
-  prompt JWT_SECRET "JWT secret"                             "$default_jwt"
+  local default_jwt; default_jwt=$(rand_secret)
+  prompt API_KEY "API key for Home Assistant REST sensor" "$default_api_key"
+  prompt JWT_SECRET "JWT secret" "$default_jwt"
+
+  echo ""
+  echo -e "${CYAN}── Site URL ──────────────────────────────────${NC}"
+  prompt LUNA_URL "Public Luna URL" "http://$(hostname -I 2>/dev/null | awk '{print $1}')"
 
   echo ""
   echo -e "${CYAN}── Admin account ─────────────────────────────${NC}"
-  prompt       OWNER_DISPLAY "Admin display name"  "Owner"
+  prompt OWNER_DISPLAY "Admin display name" "Owner"
   while true; do
     prompt OWNER_USER "Admin username" "owner"
     OWNER_USER="${OWNER_USER,,}"
@@ -127,59 +151,41 @@ gather_config() {
   prompt_password OWNER_PASS "Admin password"
 
   echo ""
+  prompt_yn SETUP_HA "Configure Home Assistant integration?" "n"
+  if [[ "$SETUP_HA" == "y" ]]; then
+    echo -e "${CYAN}── Home Assistant ─────────────────────────────${NC}"
+    prompt HA_URL "Home Assistant base URL" "http://homeassistant.local"
+    prompt HA_WEBHOOK_ID "Home Assistant webhook ID" "period_tracker"
+    prompt HA_TOKEN "Home Assistant long-lived access token (optional)" ""
+  else
+    HA_URL=""
+    HA_WEBHOOK_ID=""
+    HA_TOKEN=""
+  fi
+
+  echo ""
   info "Configuration collected. Starting installation…"
   echo ""
 }
 
-# ══════════════════════════════════════════════════════════
-#  INSTALL SYSTEM DEPENDENCIES
-# ══════════════════════════════════════════════════════════
-install_deps() {
-  info "Updating apt and installing dependencies…"
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-
-  # Node.js 20 LTS via NodeSource if not present or < 18
-  if ! command -v node &>/dev/null || [[ $(node -e "process.exit(process.version.slice(1).split('.')[0] < 18 ? 1 : 0)" 2>/dev/null; echo $?) -eq 1 ]]; then
-    info "Installing Node.js 20 LTS…"
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
-    apt-get install -y -qq nodejs
-  else
-    info "Node.js $(node -v) already present."
-  fi
-
-  apt-get install -y -qq nginx mariadb-server openssl
-
-  success "System dependencies installed."
-}
-
-# ══════════════════════════════════════════════════════════
-#  DATABASE SETUP
-# ══════════════════════════════════════════════════════════
 setup_database() {
   info "Starting MariaDB…"
   systemctl enable --now mariadb
 
   info "Creating database and user…"
-
-  # Build owner password hash using node/bcrypt after npm install
-  # For now we'll insert a placeholder and update after npm install
-  mysql -u root <<SQL
+  mariadb -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
+GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%';
 FLUSH PRIVILEGES;
 SQL
 
-  # Run the schema (tables only — server.js handles migrations on start)
-  mysql -u root "${DB_NAME}" < "${INSTALL_DIR}/db/init.sql"
-
+  mariadb -uroot "${DB_NAME}" < "${INSTALL_DIR}/db/init.sql"
   success "Database '${DB_NAME}' and user '${DB_USER}' ready."
 }
 
-# ══════════════════════════════════════════════════════════
-#  WRITE .env
-# ══════════════════════════════════════════════════════════
 write_env() {
   local HA_WEBHOOK_URL=""
   if [[ -n "$HA_URL" && -n "$HA_WEBHOOK_ID" ]]; then
@@ -213,26 +219,16 @@ ENV
   success ".env written."
 }
 
-# ══════════════════════════════════════════════════════════
-#  NPM INSTALL
-# ══════════════════════════════════════════════════════════
 install_npm() {
   info "Installing Node.js dependencies…"
-  cd "${INSTALL_DIR}/backend"
-  npm install --omit=dev --silent
-  npm install bcryptjs
-  npm install bcrypt
-  cd "${INSTALL_DIR}"
+  (cd "${INSTALL_DIR}/backend" && npm install --omit=dev --silent)
   success "npm install complete."
 }
 
-# ══════════════════════════════════════════════════════════
-#  SET ADMIN PASSWORD VIA NODE/BCRYPT
-# ══════════════════════════════════════════════════════════
 set_owner_account() {
   info "Hashing admin password…"
   local hash
-  hash=$(OWNER_PASS="$OWNER_PASS" node -e "
+  hash=$(cd "${INSTALL_DIR}/backend" && OWNER_PASS="$OWNER_PASS" node -e "
     const b = require('bcryptjs');
     process.stdout.write(b.hashSync(process.env.OWNER_PASS, 10));
   ")
@@ -242,7 +238,7 @@ set_owner_account() {
   owner_display_sql=$(printf "%s" "$OWNER_DISPLAY" | sed "s/'/''/g")
   hash_sql=$(printf "%s" "$hash" | sed "s/'/''/g")
 
-  mysql -u root "${DB_NAME}" <<SQL
+  mariadb -uroot "${DB_NAME}" <<SQL
 INSERT INTO users (username, password_hash, display_name, is_admin)
   VALUES ('${owner_user_sql}', '${hash_sql}', '${owner_display_sql}', 1)
   ON DUPLICATE KEY UPDATE
@@ -257,13 +253,8 @@ SQL
   success "Admin account '${OWNER_USER}' ready."
 }
 
-# ══════════════════════════════════════════════════════════
-#  NGINX CONFIGURATION
-# ══════════════════════════════════════════════════════════
 setup_nginx() {
   info "Configuring Nginx…"
-
-  # Extract hostname from LUNA_URL for server_name
   local hostname
   hostname=$(echo "$LUNA_URL" | sed -E 's|https?://||; s|/.*||')
 
@@ -297,7 +288,7 @@ server {
 }
 NGINX
 
-  # Enable site, disable default if still pointing to default root
+  mkdir -p /etc/nginx/sites-enabled
   ln -sf /etc/nginx/sites-available/luna /etc/nginx/sites-enabled/luna
   rm -f /etc/nginx/sites-enabled/default
 
@@ -307,12 +298,8 @@ NGINX
   success "Nginx configured for ${hostname}."
 }
 
-# ══════════════════════════════════════════════════════════
-#  SYSTEMD SERVICE
-# ══════════════════════════════════════════════════════════
 setup_systemd() {
   info "Creating systemd service…"
-
   cat > /etc/systemd/system/luna.service <<UNIT
 [Unit]
 Description=Luna Period Tracker API
@@ -322,9 +309,10 @@ Requires=mariadb.service
 [Service]
 Type=simple
 User=www-data
+Group=www-data
 WorkingDirectory=${INSTALL_DIR}/backend
 EnvironmentFile=${INSTALL_DIR}/.env
-ExecStart=$(which node) server.js
+ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -335,13 +323,14 @@ SyslogIdentifier=luna
 WantedBy=multi-user.target
 UNIT
 
-  # www-data needs read access to install dir
-  chown -R www-data:www-data "${INSTALL_DIR}/backend" "${INSTALL_DIR}/.env"
-  chmod 750 "${INSTALL_DIR}/backend"
+  mkdir -p "${INSTALL_DIR}/backups"
+  chown -R www-data:www-data "${INSTALL_DIR}/backend" "${INSTALL_DIR}/backups" "${INSTALL_DIR}/.env"
+  chmod 750 "${INSTALL_DIR}/backend" "${INSTALL_DIR}/backups"
+  chmod 640 "${INSTALL_DIR}/.env"
+  chmod 755 "${INSTALL_DIR}"
 
   systemctl daemon-reload
-  systemctl enable luna
-  systemctl restart luna
+  systemctl enable --now luna
   sleep 2
 
   if systemctl is-active --quiet luna; then
@@ -351,14 +340,9 @@ UNIT
   fi
 }
 
-# ══════════════════════════════════════════════════════════
-#  UPDATE HOME ASSISTANT CONFIG FILES
-# ══════════════════════════════════════════════════════════
 update_ha_configs() {
   [[ "$SETUP_HA" != "y" ]] && return
-
   info "Patching ha-config/configuration.yaml…"
-
   sed -i \
     -e "s|http://TRACKER_HOST:3001|${LUNA_URL}|g" \
     -e "s|YOUR_API_KEY|${API_KEY}|g" \
@@ -366,7 +350,6 @@ update_ha_configs() {
     "${INSTALL_DIR}/ha-config/configuration.yaml"
 
   info "Patching ha-config/lovelace-card.yaml…"
-
   sed -i \
     -e "s|http://127.0.0.1|${LUNA_URL}|g" \
     -e "s|https://luna.3evils.com|${LUNA_URL}|g" \
@@ -375,9 +358,6 @@ update_ha_configs() {
   success "Home Assistant config files updated."
 }
 
-# ══════════════════════════════════════════════════════════
-#  SUMMARY
-# ══════════════════════════════════════════════════════════
 print_summary() {
   echo ""
   echo -e "${GREEN}════════════════════════════════════════════${NC}"
@@ -404,13 +384,10 @@ print_summary() {
   echo ""
 }
 
-# ══════════════════════════════════════════════════════════
-#  MAIN
-# ══════════════════════════════════════════════════════════
 main() {
   require_root
   gather_config
-  install_deps
+  install_dependencies
   setup_database
   write_env
   install_npm
